@@ -9,10 +9,15 @@
 
   var state = {
     dispatch: function (action, args) {
-      state[action].apply(state, args || [])
+      action.apply(state, args || [])
       nextTick(function () {
         localStorage['todos-mithril'] = JSON.stringify(state.todos)
       })
+    },
+    onDispatch: function (action, args) {
+      return function () {
+        state.dispatch(action, args)
+      }
     },
 
     todos: JSON.parse(localStorage['todos-mithril'] || '[]'),
@@ -71,15 +76,15 @@
   var Todos = {
     add: function (e) {
       if (e.keyCode === 13) {
-        state.dispatch('createTodo', [e.target.value])
+        state.dispatch(state.createTodo, [e.target.value])
         e.target.value = ''
       }
     },
     toggleAll: function () {
-      state.dispatch('setStatuses', [document.getElementById('toggle-all').checked])
+      state.dispatch(state.setStatuses, [document.getElementById('toggle-all').checked])
     },
     toggle: function (todo) {
-      state.dispatch('setStatus', [todo, !todo.completed])
+      state.dispatch(state.setStatus, [todo, !todo.completed])
     },
     focus: function (vnode, todo) {
       if (todo === state.editing && vnode.dom !== document.activeElement) {
@@ -89,8 +94,8 @@
       }
     },
     save: function (e) {
-      if (e.keyCode === 13 || e.type === 'blur') state.dispatch('update', [e.target.value])
-      else if (e.keyCode === 27) state.dispatch('reset')
+      if (e.keyCode === 13 || e.type === 'blur') state.dispatch(state.update, [e.target.value])
+      else if (e.keyCode === 27) state.dispatch(state.reset)
     },
     oninit: state.computed,
     onbeforeupdate: state.computed,
@@ -109,15 +114,16 @@
               return $('li', { class: (todo.completed ? 'completed' : '') + ' ' + (todo === state.editing ? 'editing' : '') }, [
                 $('.view', [
                   $("input.toggle[type='checkbox']", { checked: todo.completed, onclick: function () { ui.toggle(todo) } }),
-                  $('label', { ondblclick: function () { state.dispatch('edit', [todo]) } }, todo.title),
-                  $('button.destroy', { onclick: function () { state.dispatch('destroy', [todo]) } })
+                  $('label', { ondblclick: state.onDispatch(state.edit, [todo]) }, todo.title),
+                  $('button.destroy', { onclick: state.onDispatch(state.destroy, [todo]) })
                 ]),
                 $('input.edit', { onupdate: function (vnode) { ui.focus(vnode, todo) }, onkeypress: ui.save, onblur: ui.save })
               ])
             })
           ])
         ]),
-        state.todos.length ? $('footer#footer', [
+        state.todos.length
+        ? $('footer#footer', [
           $('span#todo-count', [
             $('strong', state.remaining),
             state.remaining === 1 ? ' item left' : ' items left'
@@ -127,8 +133,9 @@
             $('li', $("a[href='/active']", { oncreate: m.route.link, class: state.showing === 'active' ? 'selected' : '' }, 'Active')),
             $('li', $("a[href='/completed']", { oncreate: m.route.link, class: state.showing === 'completed' ? 'selected' : '' }, 'Completed'))
           ]),
-          $('button#clear-completed', { onclick: function () { state.dispatch('clear') } }, 'Clear completed')
-        ]) : null
+          $('button#clear-completed', { onclick: state.onDispatch(state.clear) }, 'Clear completed')
+        ])
+        : null
       ]
     }
   }
