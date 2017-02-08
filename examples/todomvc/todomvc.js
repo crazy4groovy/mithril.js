@@ -1,104 +1,107 @@
-/* global requestAnimationFrame, localStorage, m, destroy */
+/* global m, requestAnimationFrame, localStorage */
 'use strict';
 
 (function () {
-  var $ = m
+  var $ = m // like jQuery DOM creation!
   var nextTick = requestAnimationFrame
 
-  // model
-
-  var state = {
-    dispatch: function (action, args) {
-      action.apply(state, args || [])
-      nextTick(function () {
-        localStorage['todos-mithril'] = JSON.stringify(state.todos)
-      })
-    },
-    onDispatch: function (action, args) {
-      return function () {
-        state.dispatch(action, args)
-      }
-    },
-
+  var model = {
     todos: JSON.parse(localStorage['todos-mithril'] || '[]'),
     editing: null,
-    filter: '',
+    showing: '',
     remaining: 0,
-    todosByStatus: [],
+    todosByStatus: []
+  }
 
+  var store = {
     createTodo: function (title) {
-      state.todos.push({ title: title.trim(), completed: false })
+      model.todos.push({ title: title.trim(), completed: false })
     },
     setStatuses: function (completed) {
-      for (var i = 0; i < state.todos.length; i++) state.todos[i].completed = completed
+      for (var i = 0; i < model.todos.length; i++) model.todos[i].completed = completed
     },
     setStatus: function (todo, completed) {
       todo.completed = completed
     },
     destroy: function (todo) {
-      var index = state.todos.indexOf(todo)
-      if (index > -1) state.todos.splice(index, 1)
+      var index = model.todos.indexOf(todo)
+      if (index > -1) model.todos.splice(index, 1)
     },
     clear: function () {
-      for (var i = 0; i < state.todos.length; i++) {
-        if (state.todos[i].completed) state.destroy(state.todos[i--])
+      for (var i = 0; i < model.todos.length; i++) {
+        if (model.todos[i].completed) store.destroy(model.todos[i--])
       }
     },
 
     edit: function (todo) {
-      state.editing = todo
+      model.editing = todo
     },
     update: function (title) {
-      if (state.editing != null) {
-        state.editing.title = title.trim()
-        if (state.editing.title === '') destroy(state.editing)
-        state.editing = null
+      if (model.editing != null) {
+        model.editing.title = title.trim()
+        if (model.editing.title === '') store.destroy(model.editing)
+        model.editing = null
       }
     },
     reset: function () {
-      state.editing = null
+      model.editing = null
     },
 
-    computed: function (vnode) {
-      state.showing = vnode.attrs.status || ''
-      state.remaining = state.todos.filter(function (todo) { return !todo.completed }).length
-      state.todosByStatus = state.todos.filter(function (todo) {
-        switch (state.showing) {
+    computeModel: function (vnode) {
+      model.showing = vnode.attrs.status || ''
+      model.remaining = model.todos.filter(function (todo) { return !todo.completed }).length
+      model.todosByStatus = model.todos.filter(function (todo) {
+        switch (model.showing) {
           case '': return true
           case 'active': return !todo.completed
           case 'completed': return todo.completed
         }
       })
+    },
+
+    dispatch: function (action, args) {
+      action.apply(store, args || [])
+      nextTick(function () {
+        localStorage['todos-mithril'] = JSON.stringify(model.todos)
+      })
+    },
+    onDispatch: function (action, args) {
+      return function () {
+        store.dispatch(action, args)
+      }
     }
   }
 
-  // view
+  // view ////////////////////////////////////
+
   var Todos = {
     add: function (e) {
       if (e.keyCode === 13) {
-        state.dispatch(state.createTodo, [e.target.value])
+        store.dispatch(store.createTodo, [e.target.value])
         e.target.value = ''
       }
     },
     toggleAll: function () {
-      state.dispatch(state.setStatuses, [document.getElementById('toggle-all').checked])
+      store.dispatch(store.setStatuses, [document.getElementById('toggle-all').checked])
     },
     toggle: function (todo) {
-      state.dispatch(state.setStatus, [todo, !todo.completed])
+      store.dispatch(store.setStatus, [todo, !todo.completed])
     },
     focus: function (vnode, todo) {
-      if (todo === state.editing && vnode.dom !== document.activeElement) {
+      if (todo === model.editing && vnode.dom !== document.activeElement) {
         vnode.dom.value = todo.title
         vnode.dom.focus()
         vnode.dom.selectionStart = vnode.dom.selectionEnd = todo.title.length
       }
     },
     save: function (e) {
-      if (e.keyCode === 13 || e.type === 'blur') state.dispatch(state.update, [e.target.value])
-      else if (e.keyCode === 27) state.dispatch(state.reset)
+      if (e.keyCode === 13 || e.type === 'blur') store.dispatch(store.update, [e.target.value])
+      else if (e.keyCode === 27) store.dispatch(store.reset)
     },
-    oninit: state.computed,
-    onbeforeupdate: state.computed,
+
+    oninit: store.computeModel,
+    onbeforeupdate: store.computeModel,
+
     view: function (vnode) {
       var ui = vnode.state
       return [
@@ -106,34 +109,34 @@
           $('h1', 'todos'),
           $("input#new-todo[placeholder='What needs to be done?'][autofocus]", { onkeypress: ui.add })
         ]),
-        $('section#main', { style: { display: state.todos.length > 0 ? '' : 'none' } }, [
-          $("input#toggle-all[type='checkbox']", { checked: state.remaining === 0, onclick: ui.toggleAll }),
+        $('section#main', { style: { display: model.todos.length > 0 ? '' : 'none' } }, [
+          $("input#toggle-all[type='checkbox']", { checked: model.remaining === 0, onclick: ui.toggleAll }),
           $("label[for='toggle-all']", { onclick: ui.toggleAll }, 'Mark all as complete'),
           $('ul#todo-list', [
-            state.todosByStatus.map(function (todo) {
-              return $('li', { class: (todo.completed ? 'completed' : '') + ' ' + (todo === state.editing ? 'editing' : '') }, [
+            model.todosByStatus.map(function (todo) {
+              return $('li', { class: (todo.completed ? 'completed' : '') + ' ' + (todo === model.editing ? 'editing' : '') }, [
                 $('.view', [
                   $("input.toggle[type='checkbox']", { checked: todo.completed, onclick: function () { ui.toggle(todo) } }),
-                  $('label', { ondblclick: state.onDispatch(state.edit, [todo]) }, todo.title),
-                  $('button.destroy', { onclick: state.onDispatch(state.destroy, [todo]) })
+                  $('label', { ondblclick: store.onDispatch(store.edit, [todo]) }, todo.title),
+                  $('button.destroy', { onclick: store.onDispatch(store.destroy, [todo]) })
                 ]),
                 $('input.edit', { onupdate: function (vnode) { ui.focus(vnode, todo) }, onkeypress: ui.save, onblur: ui.save })
               ])
             })
           ])
         ]),
-        state.todos.length
+        model.todos.length
         ? $('footer#footer', [
           $('span#todo-count', [
-            $('strong', state.remaining),
-            state.remaining === 1 ? ' item left' : ' items left'
+            $('strong', model.remaining),
+            model.remaining === 1 ? ' item left' : ' items left'
           ]),
           $('ul#filters', [
-            $('li', $("a[href='/']", { oncreate: m.route.link, class: state.showing === '' ? 'selected' : '' }, 'All')),
-            $('li', $("a[href='/active']", { oncreate: m.route.link, class: state.showing === 'active' ? 'selected' : '' }, 'Active')),
-            $('li', $("a[href='/completed']", { oncreate: m.route.link, class: state.showing === 'completed' ? 'selected' : '' }, 'Completed'))
+            $('li', $("a[href='/']", { oncreate: m.route.link, class: model.showing === '' ? 'selected' : '' }, 'All')),
+            $('li', $("a[href='/active']", { oncreate: m.route.link, class: model.showing === 'active' ? 'selected' : '' }, 'Active')),
+            $('li', $("a[href='/completed']", { oncreate: m.route.link, class: model.showing === 'completed' ? 'selected' : '' }, 'Completed'))
           ]),
-          $('button#clear-completed', { onclick: state.onDispatch(state.clear) }, 'Clear completed')
+          $('button#clear-completed', { onclick: store.onDispatch(store.clear) }, 'Clear completed')
         ])
         : null
       ]
